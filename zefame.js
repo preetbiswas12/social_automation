@@ -567,13 +567,55 @@ async function gotoWithTriage(page, url) {
   }
 }
 
+/* A slow page should be waited out, but a wait that never ends is not patience -
+ * it is a hang that is indistinguishable from a run that is working, because
+ * both leave the log sitting on one line for ever. The form needs 3-4s when the
+ * network is behaving, so five minutes is far more headroom than that, and is
+ * still short enough that a form which genuinely never arrives gets named. */
+const FORM_WAIT_MS = 300_000;
+
+/** Where the page actually ended up, so "the form never appeared" arrives with
+ *  evidence attached. The URL is usually the whole answer - a Cloudflare
+ *  challenge, a consent wall or an error page all look identical from the
+ *  selector side and completely different from here. */
+async function describePageState(page) {
+  return page
+    .evaluate(() => ({
+      url: location.href,
+      title: document.title,
+      text: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+    }))
+    .catch((error) => ({ url: '(page not readable)', title: '', text: error.message.split('\n')[0] }));
+}
+
+/** Wait for one of the form's controls. Each one is announced separately,
+ *  because the last line before a silent hang is the only clue to which step
+ *  swallowed the run. */
+async function waitForControl(page, label, selector) {
+  log(`  waiting for the ${label}...`);
+  try {
+    await page.waitForSelector(selector, { state: 'visible', timeout: FORM_WAIT_MS });
+  } catch (error) {
+    if (error.name !== 'TimeoutError') throw error;
+    const seen = await describePageState(page);
+    log(`  the ${label} never appeared after ${Math.round(FORM_WAIT_MS / 1000)}s`);
+    log(`  page is at : ${seen.url}`);
+    log(`  page title : ${seen.title || '(none)'}`);
+    log(`  page says  : ${seen.text || '(no text)'}`);
+    await screenshot(page, 'no-form');
+    throw new Error(`the ${label} (${selector}) never appeared - page is at ${seen.url}`);
+  }
+  log(`  ${label} is there`);
+}
+
 /** Load the page fresh and put the reel link in the box. */
 async function openForm(page) {
   log(`Opening ${CONFIG.startUrl}`);
   await gotoWithTriage(page, CONFIG.startUrl);
+  log('  the page responded');
 
-  await page.waitForSelector(SELECTORS.input, { state: 'visible' });
-  await page.waitForSelector(SELECTORS.button, { state: 'visible' });
+  await waitForControl(page, 'link box', SELECTORS.input);
+  await waitForControl(page, 'Get Now button', SELECTORS.button);
 
   // Dismiss the custom error popup if a previous invalid link left one open.
   await page
