@@ -258,6 +258,27 @@ async function launch() {
   // Containers often have a tiny /dev/shm, which makes Chrome crash on render.
   args.push('--disable-dev-shm-usage');
 
+  // Memory. Render allows 512 MB on both the Free and Starter plans, and a
+  // measured browser sitting on the Zefame page costs about 548 MB across nine
+  // processes, so without these the container is OOM killed, restarts, and
+  // dies again - which is what the repeating 502s were. Most of the saving is
+  // in not starting the machinery a headless form fill never uses.
+  args.push(
+    '--renderer-process-limit=1',
+    '--disable-gpu',
+    '--disable-extensions',
+    '--disable-background-networking',
+    '--disable-background-timer-throttling',
+    '--disable-renderer-backgrounding',
+    '--disable-breakpad',
+    '--disable-crash-reporter',
+    '--disable-sync',
+    '--mute-audio',
+    // Caps the JS heap so a leak in a third party script cannot take the
+    // container down with it.
+    '--js-flags=--max-old-space-size=160',
+  );
+
   const options = { headless: CONFIG.headless, viewport: null, args };
 
   log(
