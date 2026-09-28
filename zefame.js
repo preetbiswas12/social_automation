@@ -617,16 +617,30 @@ async function openForm(page) {
   await waitForControl(page, 'link box', SELECTORS.input);
   await waitForControl(page, 'Get Now button', SELECTORS.button);
 
-  // Dismiss the custom error popup if a previous invalid link left one open.
+  // Remove the custom error popup if a previous invalid link left one open.
+  // This must be a page.evaluate with a querySelector, NOT a locator
+  // .evaluate(): a locator waits for the element to exist first, so when there
+  // is no popup (the normal case) it waits for ever, and .catch cannot save it
+  // because there is no timeout to reject. querySelector returns null and the
+  // whole thing is a no-op instead.
   await page
-    .locator('#customErrorOverlay, .custom-error-overlay')
-    .first()
-    .evaluate((el) => el.remove())
+    .evaluate(() => {
+      const overlay = document.querySelector('#customErrorOverlay, .custom-error-overlay');
+      if (overlay) overlay.remove();
+    })
     .catch(() => {});
 
-  await page.fill(SELECTORS.input, '');
-  await page.locator(SELECTORS.input).click();
-  await page.locator(SELECTORS.input).fill(CONFIG.reelUrl);
+  // Each of the three calls below is announced, because they used to run silent
+  // and one of them is where the run disappears: a click() on an element that
+  // is covered or never settles waits for ever once the default timeout is 0.
+  log('  clearing the link box...');
+  await page.fill(SELECTORS.input, '', { timeout: FORM_WAIT_MS });
+
+  log('  focusing the link box...');
+  await page.locator(SELECTORS.input).click({ timeout: FORM_WAIT_MS });
+
+  log('  typing the link...');
+  await page.locator(SELECTORS.input).fill(CONFIG.reelUrl, { timeout: FORM_WAIT_MS });
 
   const typed = await page.inputValue(SELECTORS.input);
   if (typed.trim() !== CONFIG.reelUrl) {
@@ -638,8 +652,10 @@ async function openForm(page) {
 
 async function clickGetNow(page) {
   const button = page.locator(SELECTORS.button).first();
-  await button.waitFor({ state: 'visible' });
-  await button.scrollIntoViewIfNeeded();
+  // Bounded even though openForm already confirmed this, so no step in the
+  // click path can wait for ever on a default timeout of 0.
+  await button.waitFor({ state: 'visible', timeout: FORM_WAIT_MS });
+  await button.scrollIntoViewIfNeeded({ timeout: FORM_WAIT_MS });
 
   const label = (await button.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
   log(`Clicking button: "${label || CONFIG.buttonText}"`);
