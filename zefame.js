@@ -538,9 +538,18 @@ function pendingRequests(limit = 8) {
 }
 
 /** Navigate, and on failure say what was outstanding rather than only that it
- *  timed out. */
+ *  timed out. With no timeout a navigation can also sit there indefinitely, so
+ *  keep reporting what it is waiting on until it finishes - otherwise a page
+ *  that never arrives is indistinguishable from a run that is working. */
 async function gotoWithTriage(page, url) {
   inFlight.clear();
+  const started = Date.now();
+  const beat = setInterval(() => {
+    const pending = pendingRequests(3);
+    if (!pending.length) return;
+    log(`  still loading after ${Math.round((Date.now() - started) / 1000)}s, waiting on:`);
+    for (const line of pending) log(line);
+  }, 60_000);
   try {
     return await page.goto(url, { waitUntil: 'domcontentloaded' });
   } catch (error) {
@@ -553,6 +562,8 @@ async function gotoWithTriage(page, url) {
       log('  No requests were outstanding, so the page itself never responded.');
     }
     throw error;
+  } finally {
+    clearInterval(beat);
   }
 }
 
@@ -873,8 +884,17 @@ async function runCheck(page) {
   log('Check finished.');
 }
 
+/** A banner naming the service actually being run, taken from the start URL, so
+ *  a likes session does not print "VIEWS AUTOMATION". */
+function serviceBanner() {
+  const slug = CONFIG.startUrl.split('/').filter(Boolean).pop() ?? '';
+  const words = slug.replace(/^free-/, '').split('-').filter(Boolean);
+  if (!words.length) return 'AUTOMATION';
+  return `${words.map((word) => word.toUpperCase()).join(' ')} AUTOMATION`;
+}
+
 async function main() {
-  log('VIEWS AUTOMATION');
+  log(serviceBanner());
   log(`  start URL   : ${CONFIG.startUrl}`);
   log(`  reel link   : ${CONFIG.reelUrl}`);
   log(`  success text: "${CONFIG.successText}"`);
