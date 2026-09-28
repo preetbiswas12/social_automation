@@ -23,9 +23,10 @@ ENV HEADLESS=1
 # Writable space for the browser profile, screenshots and logs.
 RUN mkdir -p /app/logs /app/shots /app/.chrome-profile
 
-# The dashboard is HTTP, so the platform needs a port. Render sets PORT=10000
-# for web services; the server falls back to 3000 elsewhere.
-ENV PORT=3000
+# Deliberately NOT setting ENV PORT here. Render assigns PORT=10000 to web
+# services and expects the app to bind whatever it is given, so baking in a
+# fixed value risks listening on a port nobody is looking at. server.js reads
+# PORT from the environment and falls back to 3000 for local use.
 EXPOSE 3000
 
 # Serves the dashboard and supervises one zefame.js process per workflow.

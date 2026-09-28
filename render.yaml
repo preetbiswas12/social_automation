@@ -28,6 +28,7 @@ services:
       #   openssl rand -hex 24
       - key: DASHBOARD_TOKEN
         sync: false
-      # Set these in the dashboard itself - they are the per-workflow settings.
-      - key: CONFIG_PATH
-        sync: false
+      # CONFIG_PATH is deliberately not listed. It is only needed to keep
+      # config.json on a Persistent Disk, and asking for it at deploy time
+      # invites a typo that stops the server loading its config. Set it by
+      # hand if you attach a disk at /app/data.
