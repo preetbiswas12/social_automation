@@ -1,0 +1,34 @@
+[Unit]
+Description=Views automation (Zefame free views, one session every 6 minutes)
+Documentation=file:/opt/views-automation/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=views
+Group=views
+WorkingDirectory=/opt/views-automation
+
+# No DISPLAY is set, so the script automatically runs headless.
+ExecStart=/usr/bin/node /opt/views-automation/zefame.js
+
+# The script handles SIGINT to stop between sessions instead of mid-wait.
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+# If the process dies (OOM, browser crash the retries could not cover), bring
+# it back. The 6 minute cooldown means a restart does not double up on a run.
+Restart=always
+RestartSec=30
+
+StandardOutput=append:/opt/views-automation/logs/service.log
+StandardError=append:/opt/views-automation/logs/service.log
+
+# The browser needs to write to its own profile directory.
+ReadWritePaths=/opt/views-automation
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

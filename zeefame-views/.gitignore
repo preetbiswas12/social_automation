@@ -1,0 +1,6 @@
+node_modules/
+.chrome-profile/
+.persist-test/
+shots/
+logs/
+*.log

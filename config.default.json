@@ -1,0 +1,35 @@
+{
+  "$comment": "Edited by the dashboard. Restart a workflow for cooldown/wait changes to take effect; URL and reel changes are picked up on the next session only if the workflow is restarted. timesMax 0 means run forever.",
+  "defaults": {
+    "waitSeconds": 70,
+    "headless": true
+  },
+  "targets": [
+    {
+      "id": "views",
+      "name": "Instagram views",
+      "enabled": true,
+      "autoStart": true,
+      "startUrl": "https://zefame.com/en/free-instagram-views",
+      "reelUrl": "https://www.instagram.com/reel/Ddwn0ZwzX6w/",
+      "cooldownSeconds": 360,
+      "waitSeconds": 70,
+      "timesMax": 0,
+      "headless": true,
+      "note": "300 views per order, 5 min limit on the site. 6 min cooldown is deliberate headroom."
+    },
+    {
+      "id": "likes",
+      "name": "Instagram likes",
+      "enabled": true,
+      "autoStart": true,
+      "startUrl": "https://zefame.com/en/free-instagram-likes",
+      "reelUrl": "https://www.instagram.com/reel/Ddwn0ZwzX6w/",
+      "cooldownSeconds": 1860,
+      "waitSeconds": 70,
+      "timesMax": 0,
+      "headless": true,
+      "note": "Only 10 likes per order and a 30 min site limit, so this is ~20 likes/hour against ~3000 views/hour for views. Give it a different reel to the views one."
+    }
+  ]
+}

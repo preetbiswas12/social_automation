@@ -1,0 +1,18 @@
+{
+  "name": "views-automation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Views automation - runs Zefame free views and likes in fixed intervals, with a dashboard.",
+  "scripts": {
+    "start": "node zefame.js",
+    "once": "node zefame.js --cycles=1",
+    "check": "node zefame.js --check",
+    "manual": "node zefame.js --manual",
+    "serve": "node server.js",
+    "config": "node server.js --check"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

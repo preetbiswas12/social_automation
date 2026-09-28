@@ -1,0 +1,10 @@
+node_modules
+logs
+shots
+.chrome-profile
+.persist-test
+.git
+.gitignore
+*.log
+README.md
+deploy

@@ -1,0 +1,16 @@
+{
+  "name": "zeefame-views",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "zeefame views - runs a Zefame free views page in 6 minute session intervals.",
+  "scripts": {
+    "start": "node zefame.js",
+    "once": "node zefame.js --cycles=1",
+    "check": "node zefame.js --check",
+    "manual": "node zefame.js --manual"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

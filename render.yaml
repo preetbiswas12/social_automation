@@ -1,0 +1,33 @@
+# Render blueprint for views-automation.
+#
+# This is a web service rather than a background worker, because the dashboard
+# has to answer HTTP. The workflows themselves are child processes of the same
+# process, so nothing else is needed on the outside.
+#
+#   render blueprint launch
+services:
+  - type: web
+    name: views-automation
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: oregon
+    # A dead browser is recoverable, so restarting is always the right answer.
+    # If the whole service is crash-looping, see MAX_RESTARTS in server.js.
+    restartPolicy: always
+    # Unauthenticated on purpose. Render polls it and it reveals nothing.
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HEADLESS
+        value: "1"
+      # The dashboard can change URLs and start workflows. Without this the
+      # page is open to anyone who finds the URL, so the server refuses to
+      # start in production without it. Any long random string will do:
+      #   openssl rand -hex 24
+      - key: DASHBOARD_TOKEN
+        sync: false
+      # Set these in the dashboard itself - they are the per-workflow settings.
+      - key: CONFIG_PATH
+        sync: false

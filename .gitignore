@@ -1,0 +1,8 @@
+node_modules/
+.chrome-profile/
+.persist-test/
+shots/
+logs/
+*.log
+config.json
+config.json.tmp

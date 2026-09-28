@@ -1,0 +1,20 @@
+# Render blueprint for zeefame-views (the second workflow).
+services:
+  - type: worker
+    name: zeefame-views
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: oregon
+    restartPolicy: always
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HEADLESS
+        value: "1"
+      - key: START_URL
+        value: https://zefame.com/en/free-instagram-likes
+      # Set this in the dashboard so you can change reels without a redeploy.
+      # Use a different reel than the views worker.
+      - key: REEL_URL
+        sync: false
