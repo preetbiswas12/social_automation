@@ -1091,10 +1091,25 @@ async function main() {
   }
 }
 
-main().then(
-  () => process.exit(process.exitCode ?? 0),
-  (error) => {
-    log(`Fatal: ${error.stack || error.message}`);
-    process.exit(1);
-  },
-);
+/** Run the automation with this file's settings, plus any overrides.
+ *
+ *  views.js and likes.js call this instead of `node zefame.js --url=...`, so each
+ *  one is a real standalone file you can run on its own. An explicit --url or
+ *  --link on the command line still wins, so nothing is locked in.
+ */
+export function run(overrides = {}) {
+  Object.assign(CONFIG, overrides);
+  return main();
+}
+
+/* Only run when invoked directly. views.js and likes.js import run() above, so
+ * importing this file must not start anything. */
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().then(
+    () => process.exit(process.exitCode ?? 0),
+    (error) => {
+      log(`Fatal: ${error.stack || error.message}`);
+      process.exit(1);
+    },
+  );
+}
