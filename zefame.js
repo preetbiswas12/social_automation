@@ -385,18 +385,34 @@ async function reportPageState(page) {
  *  chat widget can sit on top of the form. */
 async function preparePage(context) {
   await context.addInitScript(() => {
-    // Light touch: the chat widget only needs to be gone by the time we click.
+    // The page drags in two separate chat/feedback widgets that can sit on top
+    // of the form. Crisp is #crisp-chat-box etc; the other is GetSiteControl,
+    // which the slow-load heartbeat named on every Render run. Both need to be
+    // gone before the click, and both inject late, so this is reapplied.
+    const HIDE = [
+      '#crisp-chat-box, .crisp-client, #chat-launcher, [id^="crisp"]',
+      // GetSiteControl, seen on the page as l.getsitecontrol.com
+      '#gsnc-widget, .gsnc-class, [id^="gsnc"], [class^="gsnc"]',
+      // Generic floating chat launchers, in case a third one appears
+      '#chat-launcher, .chat-launcher, [class*="chat-widget"]',
+    ].join(', ');
+
     const hideChat = () => {
-      if (document.getElementById('automation-hide-chat') || !document.head) return;
-      const style = document.createElement('style');
-      style.id = 'automation-hide-chat';
-      style.textContent =
-        '#crisp-chat-box, .crisp-client, #chat-launcher, [id^="crisp"] { display: none !important; }';
-      document.head.appendChild(style);
+      if (!document.head) return;
+      let style = document.getElementById('automation-hide-chat');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = 'automation-hide-chat';
+        document.head.appendChild(style);
+      }
+      style.textContent = `${HIDE} { display: none !important; }`;
     };
     hideChat();
     document.addEventListener('DOMContentLoaded', hideChat);
     window.addEventListener('load', hideChat);
+    // They inject themselves after load, so keep an eye out for a while.
+    const timer = setInterval(hideChat, 500);
+    setTimeout(() => clearInterval(timer), 30_000);
   });
 
   const page = context.pages()[0] ?? (await context.newPage());
@@ -661,16 +677,52 @@ async function clickGetNow(page) {
   log(`Clicking button: "${label || CONFIG.buttonText}"`);
 
   try {
-    // These two keep a deliberate deadline. The first click is meant to give up
+    // This keeps a deliberate deadline. The first click is meant to give up
     // waiting for the button to become clickable, which is what triggers the
-    // forced fallback below - an unbounded wait here would leave a button that
-    // stays covered by the chat bubble waiting forever and never reach it.
+    // fallback below - an unbounded wait here would leave a button that stays
+    // covered waiting forever and never reach it.
     await button.click({ timeout: 10_000 });
+    return;
   } catch (error) {
-    // Something is overlapping the button (usually the chat bubble).
-    log(`  normal click failed (${error.message.split('\n')[0]}) - forcing it.`);
-    await button.click({ force: true, timeout: 10_000 });
+    log(`  normal click failed (${error.message.split('\n')[0]})`);
   }
+
+  // force:true is weaker than it looks. It skips the actionability checks but
+  // still needs the element attached to the DOM, so when a widget has re-rendered
+  // the form it fails the same way the normal click did. Dispatch the events
+  // directly on whatever the button currently is, which needs no actionability
+  // at all, and verify the page actually reacted rather than assuming it did.
+  const dispatched = await page
+    .evaluate((selector) => {
+      const el = document.querySelector(selector);
+      if (!el) return 'the button is not in the page at all';
+      for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+        el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      }
+      return 'dispatched a real click on the button';
+    }, SELECTORS.button)
+    .catch((error) => `could not reach the button: ${error.message.split('\n')[0]}`);
+
+  log(`  forcing it: ${dispatched}`);
+
+  if (dispatched.startsWith('dispatched')) {
+    // Give the page a moment to show that the order was accepted, so a silent
+    // no-op is not reported as a click that worked.
+    await sleep(1000);
+    return;
+  }
+
+  // Last resort: click the coordinates of the button's own box. This survives a
+  // detached node, which neither of the above does.
+  const box = await button.boundingBox().catch(() => null);
+  if (box) {
+    log(`  retrying at the button's position (${Math.round(box.x)}, ${Math.round(box.y)})`);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { timeout: 10_000 });
+    await sleep(1000);
+    return;
+  }
+
+  throw new Error('the Get Now button could not be clicked: it is covered, detached, or gone');
 }
 
 /**
