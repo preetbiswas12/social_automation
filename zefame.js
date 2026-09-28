@@ -282,19 +282,27 @@ async function launch() {
   const options = { headless: CONFIG.headless, viewport: null, args };
 
   log(
-    `Launching browser (headless=${CONFIG.headless}` +
+    `Launching browser (headless=${CONFIG.headless}, so no window is drawn` +
       `${ENV.asRoot ? ', running as root so --no-sandbox is set' : ''})...`,
   );
 
-  // Prefer a real Chrome if one is installed, else Playwright's Chromium.
+  // Prefer a real Chrome if one is installed, else Playwright's Chromium. The
+  // Playwright image ships Chromium only, so branded Chrome being absent is
+  // expected and must not read like a failure.
   const channels = ['chrome', 'chromium'];
   let lastError;
   for (const channel of channels) {
     try {
-      return adopt(await chromium.launchPersistentContext(PROFILE_DIR, { ...options, channel }));
+      const context = adopt(await chromium.launchPersistentContext(PROFILE_DIR, { ...options, channel }));
+      if (channel !== 'chrome') log('  started the bundled Chromium');
+      return context;
     } catch (error) {
       lastError = error;
-      log(`  ${channel} unavailable: ${error.message.split('\n')[0]}`);
+      if (channel === 'chrome') {
+        log('  this image has no branded Chrome, using the bundled Chromium instead');
+      } else {
+        log(`  Chromium would not start: ${error.message.split('\n')[0]}`);
+      }
     }
   }
 
