@@ -11,7 +11,7 @@
       "enabled": true,
       "autoStart": true,
       "startUrl": "https://zefame.com/en/free-instagram-views",
-      "reelUrl": "https://www.instagram.com/reel/Ddwn0ZwzX6w/",
+      "reelUrl": "https://www.instagram.com/p/Ddx6_sEE9qw/",
       "cooldownSeconds": 360,
       "waitSeconds": 70,
       "timesMax": 0,
@@ -24,12 +24,12 @@
       "enabled": true,
       "autoStart": true,
       "startUrl": "https://zefame.com/en/free-instagram-likes",
-      "reelUrl": "https://www.instagram.com/reel/Ddwn0ZwzX6w/",
+      "reelUrl": "https://www.instagram.com/p/Ddx6_sEE9qw/",
       "cooldownSeconds": 1860,
       "waitSeconds": 70,
       "timesMax": 0,
       "headless": true,
-      "note": "Only 10 likes per order and a 30 min site limit, so this is ~20 likes/hour against ~3000 views/hour for views. Give it a different reel to the views one."
+      "note": "Only 10 likes per order and a 30 min site limit, so this is ~20 likes/hour against ~3000 views/hour for views. Currently pointed at the same reel as the views session; give it its own reel to keep the two counts separate."
     }
   ]
 }
