@@ -118,7 +118,6 @@ const CONFIG = {
 
 const SHOTS_DIR = path.join(ROOT, 'shots');
 const LOGS_DIR = path.join(ROOT, 'logs');
-const PROFILE_DIR = path.join(ROOT, '.chrome-profile');
 
 /** Optional label for which workflow this process is running.
  *
@@ -128,6 +127,23 @@ const PROFILE_DIR = path.join(ROOT, '.chrome-profile');
  *  unprefixed log lines, and no "target" field in the history.
  */
 const TARGET = args.target ? String(args.target) : '';
+
+/** One browser profile per session, not one for the whole install.
+ *
+ *  Chromium refuses to let two processes share a profile directory - the second
+ *  one dies with "Failed to create a ProcessSingleton for your profile
+ *  directory". That is harmless when a single workflow runs, which is how this
+ *  was originally used, but the dashboard starts one process per session at the
+ *  same time, so they fought over this path and one of them lost its browser.
+ *
+ *  The target id is sanitised before it becomes a path segment, because
+ *  --target is a command line argument and this ends up on the filesystem. With
+ *  no --target the original single shared directory is used, so the plain
+ *  command line case is unchanged.
+ */
+const PROFILE_DIR = TARGET
+  ? path.join(ROOT, '.chrome-profile', TARGET.replace(/[^A-Za-z0-9_-]/g, '') || 'default')
+  : path.join(ROOT, '.chrome-profile');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const stamp = () => new Date().toLocaleString('en-GB');
@@ -770,7 +786,11 @@ async function main() {
     log('The Chrome window stays open on purpose - you can watch it and click any Cloudflare box yourself.');
   }
   log('');
-  log('Flow: session 1 runs and ends, 6 minute gap, session 2 runs and ends, and so on.');
+  // The gap is the configured interval, not a fixed number: the likes page runs
+  // every 31 minutes and used to print "6 minute gap" here, which contradicted
+  // the line directly above it.
+  const gap = formatDuration(CONFIG.cooldownMs);
+  log(`Flow: session 1 runs and ends, ${gap} gap, session 2 runs and ends, and so on.`);
   log(`Platform   : ${process.platform} (headless default: ${ENV.headlessDefault})`);
 
   let context = null;

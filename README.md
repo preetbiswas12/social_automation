@@ -350,7 +350,9 @@ the window is left open on purpose. If a Turnstile box ever appears, click it
 yourself — the script waits for you and logs a nudge.
 
 **Don't delete `.chrome-profile/`.** It keeps the Cloudflare clearance cookie, so
-the invisible check stops appearing as often.
+the invisible check stops appearing as often. Each session has its own
+subdirectory in there, named after the session id, because two Chromium
+processes cannot share one profile directory.
 
 **About the site cooldown.** The site keeps a device id in `localStorage` and
 tracks the 5-minute cooldown against it. Chrome discards that storage when the

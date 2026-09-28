@@ -9,6 +9,10 @@
   :root {
     --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #e6edf3;
     --dim: #8b949e; --ok: #3fb950; --bad: #f85149; --warn: #d29922; --accent: #58a6ff;
+    /* Without this the browser assumes a light UI and draws the native select
+       arrow, scrollbars and number spinners for a white background, so the
+       arrow vanishes against the dark panel. */
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body {
@@ -169,7 +173,15 @@ function toast(message, kind = '') {
 }
 
 async function api(path, options) {
-  const res = await fetch(path, {
+  // Carry a ?token= login into the API calls. Without this, opening the page
+  // that way authenticates the document but every fetch underneath it is
+  // unauthorised, so the page loads and then shows "cannot reach the server".
+  // HTTP Basic does not need this: the browser resends the credentials itself.
+  const token = new URLSearchParams(location.search).get('token');
+  const url = token && path.startsWith('/')
+    ? path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token)
+    : path;
+  const res = await fetch(url, {
     ...options,
     headers: { 'content-type': 'application/json', ...(options?.headers ?? {}) },
   });
@@ -197,22 +209,32 @@ function resultBadge(target) {
   return '<span class="badge warn">starting</span>';
 }
 
+/** Which collapsible panes the user has open, as "id:section" keys.
+ *
+ *  The page re-reads the server every 5 seconds. Rebuilding every card from
+ *  scratch each time snapped each <details> shut again, so the open/closed
+ *  state is remembered here and written back out on the next render. */
+const openPanes = new Set();
+
+const paneKey = (id, section) => `${id}:${section}`;
+
 function cardHtml(target) {
   const s = target.status ?? {};
   const lastOk = s.lastResult === 'success';
   const warnings = (target.warnings ?? []).map((w) => `<div class="warnbox">${esc(w)}</div>`).join('');
+  const id = esc(target.id);
 
   return `
-  <div class="card" id="card-${esc(target.id)}">
+  <div class="card" id="card-${id}">
     <div class="row">
       <h2>${esc(target.name || target.id)}</h2>
       ${resultBadge(target)}
       ${target.running ? `<span class="badge idle">pid ${esc(target.pid)}</span>` : ''}
       <div class="grow"></div>
-      <button class="primary" data-act="start" data-id="${esc(target.id)}" ${target.running ? 'disabled' : ''}>Start</button>
-      <button class="danger" data-act="stop" data-id="${esc(target.id)}" ${target.running ? '' : 'disabled'}>Stop</button>
-      <button data-act="once" data-id="${esc(target.id)}" ${target.running ? 'disabled' : ''}>Run once</button>
-      <button class="danger" data-act="delete" data-id="${esc(target.id)}">Delete</button>
+      <button class="primary" data-act="start" data-id="${id}" ${target.running ? 'disabled' : ''}>Start</button>
+      <button class="danger" data-act="stop" data-id="${id}" ${target.running ? '' : 'disabled'}>Stop</button>
+      <button data-act="once" data-id="${id}" ${target.running ? 'disabled' : ''}>Run once</button>
+      <button class="danger" data-act="delete" data-id="${id}">Delete</button>
     </div>
 
     ${warnings}
@@ -221,7 +243,7 @@ function cardHtml(target) {
       <div class="stat"><div class="label">Last result</div><div class="value">
         ${s.lastResult ? `<span class="badge ${lastOk ? 'ok' : 'bad'}">${esc(s.lastResult)}</span>` : '-'}
       </div></div>
-      <div class="stat"><div class="label">Next session</div><div class="value">${esc(countdown(target))}</div></div>
+      <div class="stat"><div class="label">Next session</div><div class="value" data-cd="${esc(s.nextSessionAt ?? '')}">${esc(countdown(target))}</div></div>
       <div class="stat"><div class="label">Sessions</div><div class="value">${esc(s.sessionsRun ?? 0)} <small style="color:var(--dim)">/ ${esc(s.failures ?? 0)} failed</small></div></div>
       <div class="stat"><div class="label">Per order</div><div class="value">${
         target.quantityPerSession
@@ -229,46 +251,46 @@ function cardHtml(target) {
           : esc(s.lastViews ?? '-')
       }</div></div>
       <div class="stat"><div class="label">Restarts (1h)</div><div class="value">${esc(target.restarts ?? 0)}</div></div>
-      <div class="stat"><div class="label">Status written</div><div class="value" style="font-size:13px">${esc(since(s.updatedAt))}</div></div>
+      <div class="stat"><div class="label">Status written</div><div class="value" style="font-size:13px" data-since="${esc(s.updatedAt ?? '')}">${esc(since(s.updatedAt))}</div></div>
     </div>
 
     <div class="note" style="margin-bottom:14px">${esc(s.lastMessage ?? 'nothing reported yet')}</div>
 
-    <details ${target.warnings?.length ? 'open' : ''}>
+    <details data-key="${paneKey(target.id, 'settings')}" ${openPanes.has(paneKey(target.id, 'settings')) ? 'open' : ''}>
       <summary>Settings</summary>
       <div class="row" style="align-items:flex-end">
         <div class="grow">
           <label>Page URL</label>
-          <input type="text" data-field="startUrl" data-id="${esc(target.id)}" value="${esc(target.startUrl)}">
+          <input type="text" data-field="startUrl" data-id="${id}" data-sent="${esc(target.startUrl)}" value="${esc(target.startUrl)}">
         </div>
         <div class="grow">
           <label>Reel / post link to paste</label>
-          <input type="text" data-field="reelUrl" data-id="${esc(target.id)}" value="${esc(target.reelUrl)}">
+          <input type="text" data-field="reelUrl" data-id="${id}" data-sent="${esc(target.reelUrl)}" value="${esc(target.reelUrl)}">
         </div>
       </div>
       <div class="row" style="align-items:flex-end; margin-top:12px">
         <div style="width:150px">
           <label>Interval (min)</label>
-          <input type="number" min="0" step="0.5" data-field="cooldownSeconds" data-id="${esc(target.id)}"
-                 value="${esc(target.cooldownSeconds / 60)}">
+          <input type="number" min="0" step="0.5" data-field="cooldownSeconds" data-id="${id}"
+                 data-sent="${esc(target.cooldownSeconds / 60)}" value="${esc(target.cooldownSeconds / 60)}">
         </div>
         <div style="width:150px">
           <label>Wait after click (s)</label>
-          <input type="number" min="0" step="5" data-field="waitSeconds" data-id="${esc(target.id)}"
-                 value="${esc(target.waitSeconds)}">
+          <input type="number" min="0" step="5" data-field="waitSeconds" data-id="${id}"
+                 data-sent="${esc(target.waitSeconds)}" value="${esc(target.waitSeconds)}">
         </div>
         <div style="width:150px">
           <label>Max sessions (0 = forever)</label>
-          <input type="number" min="0" step="1" data-field="timesMax" data-id="${esc(target.id)}"
-                 value="${esc(target.timesMax)}">
+          <input type="number" min="0" step="1" data-field="timesMax" data-id="${id}"
+                 data-sent="${esc(target.timesMax)}" value="${esc(target.timesMax)}">
         </div>
         <div>
-          <label class="chk"><input type="checkbox" data-field="enabled" data-id="${esc(target.id)}" ${target.enabled ? 'checked' : ''}> enabled</label>
-          <label class="chk" style="margin-top:6px"><input type="checkbox" data-field="autoStart" data-id="${esc(target.id)}" ${target.autoStart ? 'checked' : ''}> auto-start</label>
-          <label class="chk" style="margin-top:6px"><input type="checkbox" data-field="headless" data-id="${esc(target.id)}" ${target.headless ? 'checked' : ''}> headless</label>
+          <label class="chk"><input type="checkbox" data-field="enabled" data-id="${id}" data-sent="${target.enabled ? '1' : '0'}" ${target.enabled ? 'checked' : ''}> enabled</label>
+          <label class="chk" style="margin-top:6px"><input type="checkbox" data-field="autoStart" data-id="${id}" data-sent="${target.autoStart ? '1' : '0'}" ${target.autoStart ? 'checked' : ''}> auto-start</label>
+          <label class="chk" style="margin-top:6px"><input type="checkbox" data-field="headless" data-id="${id}" data-sent="${target.headless ? '1' : '0'}" ${target.headless ? 'checked' : ''}> headless</label>
         </div>
         <div class="grow"></div>
-        <button class="primary" data-act="save" data-id="${esc(target.id)}">Save</button>
+        <button class="primary" data-act="save" data-id="${id}">Save</button>
       </div>
       <div class="note">
         Page, reel, interval and wait only change after a restart.
@@ -276,16 +298,118 @@ function cardHtml(target) {
       </div>
     </details>
 
-    <details>
+    <details data-key="${paneKey(target.id, 'log')}" ${openPanes.has(paneKey(target.id, 'log')) ? 'open' : ''}>
       <summary>Log and history</summary>
-      <div class="row" style="margin:8px 0">
-        <button data-act="logs" data-id="${esc(target.id)}">Reload log</button>
-        <button data-act="history" data-id="${esc(target.id)}">Reload history</button>
+      <div class="row" style="margin:8px 0; align-items:center">
+        <button data-act="logs" data-id="${id}">Reload log</button>
+        <button data-act="history" data-id="${id}">Reload history</button>
+        <span class="note" style="margin:0">refreshes by itself every 5s while this is open</span>
       </div>
-      <pre id="log-${esc(target.id)}">(not loaded)</pre>
-      <pre id="hist-${esc(target.id)}" style="max-height:200px; display:none"></pre>
+      <pre id="log-${id}">(not loaded)</pre>
+      <pre id="hist-${id}" style="max-height:200px; display:none"></pre>
     </details>
   </div>`;
+}
+
+/** Has the user typed into this card something the server has not been told
+ *  about? A card in this state must not be rebuilt out from under the cursor,
+ *  which is what made editing a setting feel impossible. */
+function cardIsDirty(card) {
+  return [...card.querySelectorAll('[data-field]')].some((el) => {
+    const now = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+    return String(now) !== String(el.dataset.sent ?? '');
+  });
+}
+
+/** The countdown and "x ago" are the only parts that move with nothing but the
+ *  clock, so they are updated in place rather than forcing a rebuild. */
+function tickLive(root) {
+  const now = Date.now();
+  for (const el of root.querySelectorAll('[data-cd]')) {
+    if (!el.dataset.cd) { el.textContent = '-'; continue; }
+    const left = new Date(el.dataset.cd).getTime() - now;
+    el.textContent = left <= 0 ? 'due now' : `in ${fmtDuration(left)}`;
+  }
+  for (const el of root.querySelectorAll('[data-since]')) {
+    el.textContent = since(el.dataset.since);
+  }
+}
+
+/** Everything a card renders, so a rebuild can be skipped when none of it has
+ *  moved. Deliberately excludes nothing time based: nextSessionAt and updatedAt
+ *  only change when the worker writes new status, and the parts that move on
+ *  their own (the countdown, "x ago") are ticked in place by tickLive(). */
+function cardSignature(target) {
+  return JSON.stringify([target, target.warnings ?? []]);
+}
+
+/** The card for one target.
+ *
+ *  Rebuilt whenever the server data moves, so status, badges and warnings stay
+ *  current. Two things are carried across the rebuild so a refresh is invisible:
+ *  any unsaved edit in the form, and the log and history panes. A rebuild with
+ *  no changes at all is skipped, and the countdown and "x ago" are ticked in
+ *  place by tickLive() rather than by rebuilding. */
+function cardNode(target, existing) {
+  const sig = cardSignature(target);
+  if (existing && existing.dataset.sig === sig && !cardIsDirty(existing)) return existing;
+
+  // A card that is appearing for the first time with warnings starts with its
+  // panes already open, so the warning sits next to the thing you would change
+  // to fix it. Recorded in openPanes so the next rebuild does not shut it.
+  if (!existing && target.warnings?.length) {
+    openPanes.add(paneKey(target.id, 'settings'));
+    openPanes.add(paneKey(target.id, 'log'));
+  }
+
+  // Was a field focused? Rebuilding replaces the element, so the caret has to be
+  // put back or the next keystroke lands nowhere.
+  const active = existing?.contains(document.activeElement)
+    ? document.activeElement.dataset.field ?? null
+    : null;
+  const caret = active && document.activeElement.selectionStart != null
+    ? [document.activeElement.selectionStart, document.activeElement.selectionEnd]
+    : null;
+
+  const template = document.createElement('template');
+  template.innerHTML = cardHtml(target).trim();
+  const node = template.content.firstElementChild;
+  node.dataset.sig = sig;
+
+  if (existing) {
+    // Carry over unsaved edits. data-sent keeps the server's value on purpose,
+    // so the field still counts as dirty and the next rebuild preserves it too.
+    const before = new Map();
+    for (const el of existing.querySelectorAll('[data-field]')) before.set(el.dataset.field, el);
+    for (const el of node.querySelectorAll('[data-field]')) {
+      const old = before.get(el.dataset.field);
+      if (!old) continue;
+      if (el.type === 'checkbox') {
+        if (old.checked !== el.checked) el.checked = old.checked;
+      } else if (old.value !== el.value) {
+        el.value = old.value;
+      }
+    }
+    for (const prefix of ['log-', 'hist-']) {
+      const was = existing.querySelector(`pre[id^="${prefix}"]`);
+      const now = node.querySelector(`pre[id^="${prefix}"]`);
+      if (was && now && was.dataset.loaded) {
+        now.textContent = was.textContent;
+        now.dataset.loaded = '1';
+      }
+    }
+  }
+
+  if (active) {
+    const field = node.querySelector(`[data-field="${active}"]`);
+    if (field) {
+      field.focus();
+      if (caret && field.setSelectionRange) {
+        try { field.setSelectionRange(caret[0], caret[1]); } catch { /* number inputs */ }
+      }
+    }
+  }
+  return node;
 }
 
 function render() {
@@ -315,18 +439,66 @@ function render() {
     }
   }
 
-  // Keep any open log panes from being thrown away on a 5 second refresh.
-  const openLogs = [...document.querySelectorAll('pre[id^="log-"]')]
-    .filter((el) => el.dataset.loaded).map((el) => [el.id, el.textContent]);
-  const openHist = [...document.querySelectorAll('pre[id^="hist-"]')]
-    .filter((el) => el.dataset.loaded).map((el) => [el.id, el.textContent]);
+  // Reconcile the card list one card at a time instead of throwing the whole
+  // list away and rebuilding it. Assigning innerHTML here is what used to close
+  // every pane and wipe anything half typed, five seconds after you touched it.
+  const holder = $('#targets');
+  const existing = new Map();
+  for (const el of holder.children) existing.set(el.id, el);
 
-  $('#targets').innerHTML = state.targets.map(cardHtml).join('');
+  const wanted = state.targets.map((target) => cardNode(target, existing.get(`card-${target.id}`)));
+  const keep = new Set(wanted);
+  for (const el of [...holder.children]) if (!keep.has(el)) el.remove();
+  wanted.forEach((node, i) => {
+    if (holder.children[i] !== node) holder.insertBefore(node, holder.children[i] ?? null);
+  });
+
   $('#empty').style.display = state.targets.length ? 'none' : 'block';
+  tickLive(holder);
+}
 
-  for (const [id, text] of [...openLogs, ...openHist]) {
-    const el = document.getElementById(id);
-    if (el) { el.textContent = text; el.dataset.loaded = '1'; }
+/* ------------------------------------------------------------ log streaming */
+
+async function loadLog(id) {
+  const el = document.getElementById(`log-${id}`);
+  if (!el) return;
+  try {
+    const body = await api(`/api/logs?target=${encodeURIComponent(id)}&lines=300`);
+    // Only follow the tail if the reader is already at the bottom, so scrolling
+    // back to read something is not yanked away on the next refresh.
+    const pinned = el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
+    el.textContent = body.lines.join('\n') || '(no output yet)';
+    el.dataset.loaded = '1';
+    if (pinned) el.scrollTop = el.scrollHeight;
+  } catch (error) {
+    el.textContent = `could not load the log: ${error.message}`;
+  }
+}
+
+async function loadHistory(id) {
+  const el = document.getElementById(`hist-${id}`);
+  if (!el) return;
+  try {
+    const body = await api(`/api/runs?target=${encodeURIComponent(id)}&limit=100`);
+    el.style.display = body.runs.length ? 'block' : 'none';
+    el.textContent = body.runs
+      .map((r) => `${r.at}  session ${r.session}  ${r.result}  ${r.views ?? ''}  ${r.message ?? ''}`)
+      .join('\n');
+    el.dataset.loaded = '1';
+  } catch (error) {
+    el.textContent = `could not load the history: ${error.message}`;
+  }
+}
+
+/** Keep every open log pane current. Opening a pane loads it the first time and
+ *  then refreshes on the same 5 second tick as the rest of the page, so the log
+ *  streams on its own instead of needing "Reload log" clicked every time. */
+function refreshOpenPanes() {
+  for (const details of document.querySelectorAll('details[data-key$=":log"][open]')) {
+    const id = details.dataset.key.split(':')[0];
+    const hist = document.getElementById(`hist-${id}`);
+    loadLog(id);
+    if (hist?.dataset.loaded) loadHistory(id);
   }
 }
 
@@ -403,7 +575,8 @@ async function act(act_, id) {
   try {
     if (act_ === 'save') {
       const patch = {};
-      document.querySelectorAll(`[data-id="${CSS.escape(id)}"][data-field]`).forEach((el) => {
+      const fields = document.querySelectorAll(`[data-id="${CSS.escape(id)}"][data-field]`);
+      fields.forEach((el) => {
         const key = el.dataset.field;
         patch[key] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value;
       });
@@ -415,20 +588,17 @@ async function act(act_, id) {
       if (body.restartNeeded && target?.running) {
         toast('Restart the workflow for the new settings to take effect.', 'err');
       }
+      // The server has these values now, so the card is no longer holding
+      // unsaved edits. Without this it would stay frozen against rebuilds
+      // until the next poll happened to land on a clean comparison.
+      fields.forEach((el) => {
+        const value = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+        el.dataset.sent = String(value);
+      });
     } else if (act_ === 'logs') {
-      const body = await api(`/api/logs?target=${encodeURIComponent(id)}&lines=300`);
-      const el = document.getElementById(`log-${id}`);
-      el.textContent = body.lines.join('\n') || '(no output yet)';
-      el.dataset.loaded = '1';
-      el.scrollTop = el.scrollHeight;
+      await loadLog(id);
     } else if (act_ === 'history') {
-      const body = await api(`/api/runs?target=${encodeURIComponent(id)}&limit=100`);
-      const el = document.getElementById(`hist-${id}`);
-      el.style.display = body.runs.length ? 'block' : 'none';
-      el.textContent = body.runs
-        .map((r) => `${r.at}  session ${r.session}  ${r.result}  ${r.views ?? ''}  ${r.message ?? ''}`)
-        .join('\n');
-      el.dataset.loaded = '1';
+      await loadHistory(id);
     } else if (act_ === 'delete') {
       await deleteSession(id);
       return;
@@ -445,18 +615,33 @@ async function act(act_, id) {
 document.addEventListener('click', (event) => {
   const button = event.target.closest('button[data-act]');
   if (!button) return;
-  if (button.dataset.act === 'save') {
-    // Save without a reload wiping the fields the user is still editing.
-    act('save', button.dataset.id);
-  } else {
-    act(button.dataset.act, button.dataset.id);
-  }
+  act(button.dataset.act, button.dataset.id);
 });
+
+/* Remember which panes are open, and load a log the first time its pane is
+ * opened. `toggle` does not bubble, so this listens in the capture phase. */
+document.addEventListener('toggle', (event) => {
+  const details = event.target;
+  if (!(details instanceof HTMLDetailsElement) || !details.dataset.key) return;
+  if (details.open) {
+    openPanes.add(details.dataset.key);
+    if (details.dataset.key.endsWith(':log')) {
+      const id = details.dataset.key.slice(0, -':log'.length);
+      loadLog(id);
+      const hist = document.getElementById(`hist-${id}`);
+      if (hist?.dataset.loaded) loadHistory(id);
+    }
+  } else {
+    openPanes.delete(details.dataset.key);
+  }
+}, true);
 
 $('#refresh').addEventListener('click', loadState);
 $('#createBtn').addEventListener('click', createSession);
 loadState();
-setInterval(loadState, 5000);
+// State first, then whatever log panes are open, so the panes refresh on the
+// same tick instead of trailing a poll behind.
+setInterval(() => { loadState().then(refreshOpenPanes); }, 5000);
 </script>
 </body>
 </html>
