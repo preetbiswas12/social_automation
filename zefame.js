@@ -225,14 +225,26 @@ async function screenshot(page, name) {
 /* ----------------------------------------------------------------- browser */
 
 let stopping = false;
-process.on('SIGINT', () => {
-  if (stopping) process.exit(1);
+
+/** The open browser. Steps no longer time out, so a stop request has to be able
+ *  to interrupt a step that is waiting on the network - otherwise a page that
+ *  never answers would wedge a session the dashboard can no longer stop. */
+let liveContext = null;
+
+function requestStop(quitNow) {
+  if (stopping) {
+    if (quitNow) process.exit(1);
+    return;
+  }
   stopping = true;
-  log('Stop requested (Ctrl+C again to quit immediately). Current step will finish.');
-});
-process.on('SIGTERM', () => {
-  stopping = true;
-});
+  log('Stop requested (again to quit immediately). Interrupting the current step.');
+  // Closing the browser makes an in-flight navigation or selector wait reject
+  // straight away instead of sitting there until the site answers.
+  liveContext?.close().catch(() => {});
+}
+
+process.on('SIGINT', () => requestStop(true));
+process.on('SIGTERM', () => requestStop(false));
 
 async function launch() {
   ensureDirs();
@@ -477,6 +489,12 @@ function watchRequests(context) {
  *  launch path watches requests without having to remember to. */
 function adopt(context) {
   watchRequests(context);
+  // Wait for the site for as long as it takes. A slow page should be waited out
+  // rather than failed, and requestStop() above is what still guarantees a
+  // session can be ended.
+  context.setDefaultTimeout(0);
+  context.setDefaultNavigationTimeout(0);
+  liveContext = context;
   return context;
 }
 
@@ -495,7 +513,7 @@ function pendingRequests(limit = 8) {
 async function gotoWithTriage(page, url) {
   inFlight.clear();
   try {
-    return await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    return await page.goto(url, { waitUntil: 'domcontentloaded' });
   } catch (error) {
     const pending = pendingRequests();
     log(`  Navigation failed: ${error.message.split('\n')[0]}`);
@@ -514,8 +532,8 @@ async function openForm(page) {
   log(`Opening ${CONFIG.startUrl}`);
   await gotoWithTriage(page, CONFIG.startUrl);
 
-  await page.waitForSelector(SELECTORS.input, { state: 'visible', timeout: 30_000 });
-  await page.waitForSelector(SELECTORS.button, { state: 'visible', timeout: 30_000 });
+  await page.waitForSelector(SELECTORS.input, { state: 'visible' });
+  await page.waitForSelector(SELECTORS.button, { state: 'visible' });
 
   // Dismiss the custom error popup if a previous invalid link left one open.
   await page
@@ -538,13 +556,17 @@ async function openForm(page) {
 
 async function clickGetNow(page) {
   const button = page.locator(SELECTORS.button).first();
-  await button.waitFor({ state: 'visible', timeout: 15_000 });
+  await button.waitFor({ state: 'visible' });
   await button.scrollIntoViewIfNeeded();
 
   const label = (await button.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
   log(`Clicking button: "${label || CONFIG.buttonText}"`);
 
   try {
+    // These two keep a deliberate deadline. The first click is meant to give up
+    // waiting for the button to become clickable, which is what triggers the
+    // forced fallback below - an unbounded wait here would leave a button that
+    // stays covered by the chat bubble waiting forever and never reach it.
     await button.click({ timeout: 10_000 });
   } catch (error) {
     // Something is overlapping the button (usually the chat bubble).
@@ -699,7 +721,7 @@ async function runManual(page) {
     log('MANUAL MODE - the script will not type or click anything.');
     log('');
     log(`Opening ${CONFIG.startUrl}`);
-    await page.goto(CONFIG.startUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await gotoWithTriage(page, CONFIG.startUrl);
 
     const title = await page.title();
     const input = page.locator(SELECTORS.input);
@@ -899,17 +921,22 @@ async function main() {
             error.message.includes('Protocol error') ||
             error.message.includes('Connection closed');
 
-          if (recoverable && attempt === 1) {
+          if (recoverable && attempt === 1 && !stopping) {
             log(`  SESSION ${session}: ${error.message.split('\n')[0]}`);
             log(`  recovering and retrying once...`);
             if (context) await context.close().catch(() => {});
             context = null;
             page = null;
+            liveContext = null;
             continue;
           }
 
-          outcome = { result: 'crash', matched: false, message: error.message.split('\n')[0] };
-          log(`  SESSION ${session} FAILED: ${outcome.message}`);
+          // A stop interrupts the step on purpose, so it is not a failure and
+          // must not be counted as one.
+          outcome = stopping
+            ? { result: 'stopped', matched: false, message: 'stopped while the step was in progress' }
+            : { result: 'crash', matched: false, message: error.message.split('\n')[0] };
+          if (!stopping) log(`  SESSION ${session} FAILED: ${outcome.message}`);
           break;
         }
       }
