@@ -293,12 +293,12 @@ function render() {
     `${state.targets.length} session(s), ${state.targets.filter((t) => t.running).length} running - ` +
     `updated ${new Date().toLocaleTimeString('en-GB')}`;
 
-  $('#banner').innerHTML = state.authRequired ? '' : `
-    <div class="banner">
-      <strong>DASHBOARD_TOKEN is not set.</strong>
-      This page can change URLs and start workflows, and right now anyone who
-      finds the URL can use it. Set DASHBOARD_TOKEN before leaving this public.
-    </div>`;
+  $('#banner').innerHTML = state.usingDefaultPassword ? `
+    <div class="warnbox">
+      Using the password built into the source, so anyone who can read the repo
+      can log in here. Set <code>DASHBOARD_TOKEN</code> in the environment to
+      override it - no code change needed.
+    </div>` : '';
 
   $('#notices').innerHTML = (state.notices ?? [])
     .map((n) => `<div class="warnbox">${esc(n.text)}</div>`)
@@ -338,6 +338,7 @@ async function loadState() {
     state.targets = data.targets;
     state.now = data.now;
     state.authRequired = data.authRequired;
+    state.usingDefaultPassword = data.usingDefaultPassword;
     state.services = data.services;
     state.notices = data.notices;
     render();

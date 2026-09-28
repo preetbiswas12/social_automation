@@ -423,8 +423,14 @@ function tailLog(id, lines = 200) {
 
 /* ------------------------------------------------------------------- auth */
 
-const TOKEN = process.env.DASHBOARD_TOKEN ?? '';
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+/** The built-in dashboard password, so deploying needs no setup at all.
+ *
+ *  It is in the source, so treat it as public: anyone who can read the repo
+ *  can log in and start browser sessions. DASHBOARD_TOKEN in the environment
+ *  overrides it, which is how you change it without a code edit. */
+const DEFAULT_TOKEN = 'preetb121106';
+const TOKEN = process.env.DASHBOARD_TOKEN || DEFAULT_TOKEN;
+const USING_DEFAULT_TOKEN = TOKEN === DEFAULT_TOKEN;
 
 function safeEqual(a, b) {
   const left = Buffer.from(String(a));
@@ -437,7 +443,6 @@ function safeEqual(a, b) {
  *  up in history or in a referer header. Any username, token as the password.
  *  ?token= also works for curl. */
 function authorised(req, url) {
-  if (!TOKEN) return true;
   const header = req.headers.authorization ?? '';
   if (header.startsWith('Basic ')) {
     let decoded = '';
@@ -629,7 +634,8 @@ async function handle(req, res, url) {
     const described = config.targets.map(describeTarget);
     return sendJson(res, 200, {
       now: new Date().toISOString(),
-      authRequired: Boolean(TOKEN),
+      authRequired: true,
+      usingDefaultPassword: USING_DEFAULT_TOKEN,
       services: Object.entries(SERVICE_PROFILES).map(([url, profile]) => ({ url, ...profile })),
       notices: globalNotices(config.targets),
       targets: described,
@@ -856,13 +862,9 @@ try {
   process.exit(1);
 }
 
-if (!TOKEN) {
-  if (IS_PRODUCTION) {
-    log('DASHBOARD_TOKEN is not set. Refusing to serve an unprotected dashboard.');
-    log('Set it in your environment - any long random string will do.');
-    process.exit(1);
-  }
-  log('WARNING: DASHBOARD_TOKEN is not set, so the dashboard is open to anyone.');
+if (USING_DEFAULT_TOKEN) {
+  log(`using the built-in dashboard password from the source.`);
+  log('set DASHBOARD_TOKEN in the environment to override it.');
 }
 
 reapOrphans();

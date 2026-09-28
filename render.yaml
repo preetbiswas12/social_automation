@@ -22,12 +22,12 @@ services:
         value: production
       - key: HEADLESS
         value: "1"
-      # The dashboard can change URLs and start workflows. Without this the
-      # page is open to anyone who finds the URL, so the server refuses to
-      # start in production without it. Any long random string will do:
-      #   openssl rand -hex 24
-      - key: DASHBOARD_TOKEN
-        sync: false
+      # No secret needed to deploy. The dashboard password lives in server.js,
+      # so there is nothing here for Render to prompt you for.
+      #
+      # To change the password without editing code, add DASHBOARD_TOKEN in the
+      # Render dashboard and paste anything in. It overrides the built-in one.
+      #
       # CONFIG_PATH is deliberately not listed. It is only needed to keep
       # config.json on a Persistent Disk, and asking for it at deploy time
       # invites a typo that stops the server loading its config. Set it by

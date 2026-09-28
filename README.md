@@ -22,11 +22,11 @@ stays exactly as it is and a browser that dies in one workflow cannot take
 another one down with it.
 
 ```bash
-DASHBOARD_TOKEN=$(openssl rand -hex 24) npm run serve
+npm run serve
 ```
 
 Then open `http://localhost:3000`. The browser prompts for a password; **any
-username, the token as the password**. `?token=...` also works for curl.
+username, the password as the password**. `?token=...` also works for curl.
 
 From the dashboard you can:
 
@@ -144,14 +144,26 @@ Environment variables:
 
 | Var | Required | What it does |
 | --- | --- | --- |
-| `DASHBOARD_TOKEN` | **yes** | the dashboard password. The server refuses to start in production without it. Generate with `openssl rand -hex 24` |
-| `NODE_ENV` | set by blueprint | `production`, which is what makes the token mandatory |
-| `HEADLESS` | no | `1` forces headless. The per-workflow setting in the dashboard overrides it |
+| `DASHBOARD_TOKEN` | no | overrides the password built into `server.js` |
+| `NODE_ENV` | set by blueprint | `production` |
+| `HEADLESS` | no | `1` forces headless. The per-session setting in the dashboard overrides it |
 | `CONFIG_PATH` | no | where `config.json` lives. Point it at a disk to make dashboard edits survive a redeploy |
-| `PORT` | set by Render | Render web services listen on 10000; the server reads it |
+| `PORT` | set by Render | Render assigns this for web services; the app must bind it |
+
+### The dashboard password
+
+It is in `server.js`, so **deploying needs no setup at all** — no environment
+variable, nothing to paste, no prompt. Log in with any username and that
+password.
+
+Because it is in the source, treat it as public: anyone who can read the repo
+can log in and start browser sessions. To use something else, set
+`DASHBOARD_TOKEN` in the environment and it overrides the built-in one, no code
+change. The dashboard shows a warning banner while the built-in password is in
+use.
 
 `/healthz` is deliberately unauthenticated so Render can poll it. Everything
-else, including the API, needs the token.
+else needs the password.
 
 Before trusting it, read the logs on the first deploy. What you are watching for
 is `Turnstile verification failed` - see the Cloudflare section below.
