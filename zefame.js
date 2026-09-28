@@ -282,7 +282,7 @@ async function launch() {
   const options = { headless: CONFIG.headless, viewport: null, args };
 
   log(
-    `Launching browser (headless=${CONFIG.headless}, so no window is drawn` +
+    `Launching browser (${CONFIG.headless ? 'headless, so no window is drawn' : 'headed, a window opens for you to watch'}` +
       `${ENV.asRoot ? ', running as root so --no-sandbox is set' : ''})...`,
   );
 
