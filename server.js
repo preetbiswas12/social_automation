@@ -533,12 +533,15 @@ function globalNotices(targets) {
     });
   }
 
-  const running = targets.filter((t) => running.has(t.id)).length;
-  if (running > 2) {
+  // Named runningCount, not running: the module level `running` is the map of
+  // live child processes, and a local const of the same name here would shadow
+  // it, so the initialiser below would reference itself before it is defined.
+  const runningCount = targets.filter((t) => running.has(t.id)).length;
+  if (runningCount > 2) {
     notices.push({
       level: 'warn',
       text:
-        `${running} sessions are running, and each one is its own Chromium process. ` +
+        `${runningCount} sessions are running, and each one is its own Chromium process. ` +
         'A small Render instance will run out of memory well before this many. ' +
         'Watch for the service being OOM-killed.',
     });
