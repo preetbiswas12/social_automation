@@ -24,7 +24,6 @@ const LIKES = {
   startUrl: 'https://zefame.com/en/free-instagram-likes',
   reelUrl: 'https://www.instagram.com/p/Ddx6_sEE9qw/',
   cooldownMs: 1_860_000, // 31 minutes - the site's limit is 30
-  postClickWaitMs: 70_000, // the site's own countdown is 60 s
   // Its own Chromium profile, so it can run at the same time as views.js. See
   // the note in views.js - sharing one directory stops the second process.
   target: 'likes',
@@ -46,7 +45,9 @@ function overridesFromArgs() {
     if (match[1] === 'url') out.startUrl = match[2];
     if (match[1] === 'link') out.reelUrl = match[2];
     if (match[1] === 'cooldown') out.cooldownMs = Number(match[2]) * 1000;
-    if (match[1] === 'wait') out.postClickWaitMs = Number(match[2]) * 1000;
+    // --wait=N caps the wait in seconds; the default is to wait without a
+    // deadline until the site shows success or an error page.
+    if (match[1] === 'wait') out.maxWaitMs = Number(match[2]) * 1000;
   }
   return out;
 }

@@ -6,3 +6,6 @@ logs/
 *.log
 config.json
 config.json.tmp
+
+discord.config.json
+discord-state.json

@@ -3,8 +3,8 @@
  *
  * Runs in sessions on a fixed interval:
  *   session 1: open the page, paste the reel link, click "Get Now",
- *              wait 1 min 10 s, look for the success text, then the session ends
- *   6 minute gap
+ *              then wait - with no deadline - until the site shows success
+ *    6 minute gap
  *   session 2: same thing again
  *   ...repeats until Ctrl+C
  *
@@ -19,6 +19,7 @@
  *   node zefame.js --check            # verify selectors only, never submits
  *   node zefame.js --headless         # hide the Chrome window
  *   node zefame.js --target=views     # label this run, used by the dashboard
+ *   node zefame.js --max-wait=600     # optional hard cap; 0 = wait forever
  */
 
 import { chromium } from 'playwright';
@@ -39,10 +40,17 @@ const DEFAULTS = {
   buttonText: 'Get Now',
   successText: 'Success',
 
-  postClickWaitMs: 70_000, // 1 min 10 s - the site's own countdown is 60 s
+  // Waiting for the countdown is NOT time limited: a Zefame order can sit on
+  // "countdown running" for minutes, and a deadline turns that into a false
+  // timeout for a run that is still proceeding. We wait until the site shows
+  // success or an error page. maxWaitMs is an optional hard cap (0 = wait as
+  // long as it takes); postClickWaitMs / graceMs are kept only so the old
+  // --wait flag still maps to something.
+  postClickWaitMs: 70_000, // legacy floor when --wait is given; not a deadline
+  maxWaitMs: 0, // 0 means no deadline - wait for the success/error page
   cooldownMs: 360_000, // 6 minutes between runs
-  settleMs: 5_000, // render slack after the wait, before the grace period
-  graceMs: 45_000, // extra patience if 70 s was not enough
+  settleMs: 5_000, // render slack before the first outcome check
+  graceMs: 45_000, // legacy: ignored unless maxWaitMs is explicitly set
   cycles: Infinity,
 
   headless: false,
@@ -107,6 +115,10 @@ const CONFIG = {
   buttonText: String(args['button-text'] ?? DEFAULTS.buttonText),
   successText: String(args['success-text'] ?? DEFAULTS.successText),
   postClickWaitMs: num(args.wait, DEFAULTS.postClickWaitMs),
+  // An optional deadline for the whole wait. 0 = wait until the site shows
+  // success or error, however long that takes. --wait is accepted as a synonym
+  // so the old flag still means something: "no longer than this".
+  maxWaitMs: num(args['max-wait'] ?? args.wait, process.env.MAX_WAIT_MS ?? DEFAULTS.maxWaitMs),
   cooldownMs: num(args.cooldown, DEFAULTS.cooldownMs),
   graceMs: num(args.grace, DEFAULTS.graceMs),
   cycles: num(args.cycles ?? args.sessions, DEFAULTS.cycles),
@@ -777,30 +789,43 @@ function startWatcher(page) {
 }
 
 /**
- * Check the page after the full wait has already elapsed. `settleMs` only gives
- * the page a moment to finish rendering before we fall through to the grace
- * period - it is not another full wait.
+ * Wait for the page to actually show a result - success or error - with no
+ * deadline. Zefame orders can sit on "countdown running" for minutes; picking a
+ * cutoff declared those runs timed out, which is why some sessions ended as
+ * "timeout" while the countdown was still going.
+ *
+ * The loop logs a heartbeat every 30 s, because a silent unbounded wait was the
+ * failure mode this script used to have. `maxWaitMs` gives an operator an
+ * optional hard cap (0, the default, means wait as long as it takes).
  */
-async function waitForOutcome(page, views) {
-  const settleDeadline = Date.now() + DEFAULTS.settleMs;
+async function waitForOutcome(page, watcher) {
+  const startedAt = Date.now();
+  let lastHeartbeat = 0;
 
-  while (Date.now() < settleDeadline && !stopping) {
-    if (await isVisible(page, SELECTORS.success)) return resolveSuccess(page, views);
-    if (await isVisible(page, SELECTORS.error)) return resolveError(page, views);
+  while (!stopping) {
+    if (await isVisible(page, SELECTORS.success)) return resolveSuccess(page, watcher.views);
+    if (await isVisible(page, SELECTORS.error)) return resolveError(page, watcher.views);
+
+    const elapsed = Date.now() - startedAt;
+    if (elapsed - lastHeartbeat >= 30_000) {
+      const timer = watcher.timerSeen
+        ? ` (countdown ${(await textOf(page, SELECTORS.timerText)) || 'running'})`
+        : '';
+      log(`  still waiting for the success page${timer} - ${formatDuration(elapsed)} so far...`);
+      lastHeartbeat = elapsed;
+    }
+
+    if (CONFIG.maxWaitMs > 0 && elapsed >= CONFIG.maxWaitMs) {
+      return {
+        result: 'timeout',
+        message: `no result after ${formatDuration(elapsed)} (hard cap set via --max-wait)`,
+        views: watcher.views,
+      };
+    }
     await sleep(1000);
   }
 
-  log(`  no result after ${formatDuration(CONFIG.postClickWaitMs)}`);
-  if (CONFIG.graceMs > 0) {
-    log(`  giving it ${formatDuration(CONFIG.graceMs)} more...`);
-    const graceDeadline = Date.now() + CONFIG.graceMs;
-    while (Date.now() < graceDeadline && !stopping) {
-      if (await isVisible(page, SELECTORS.success)) return resolveSuccess(page, views);
-      if (await isVisible(page, SELECTORS.error)) return resolveError(page, views);
-      await sleep(1000);
-    }
-  }
-  return { result: 'timeout', message: 'No success or error page appeared', views };
+  return { result: 'stopped', message: 'stop requested while waiting', views: watcher.views };
 }
 
 async function resolveSuccess(page, views) {
@@ -848,13 +873,11 @@ async function runCycle(page, session) {
 
   await clickGetNow(page);
 
-  // Watch the countdown while we sit out the full wait.
+  // Watch the countdown while we wait for the site to finish. There is no
+  // deadline: the session ends when the success or error page appears.
   const watcher = startWatcher(page);
-  log(`Waiting ${formatDuration(CONFIG.postClickWaitMs)} before checking for the success text...`);
-  await interruptibleSleep(CONFIG.postClickWaitMs);
-  if (stopping) return { result: 'stopped', message: 'stop requested during the wait', views: '' };
-
-  const outcome = await waitForOutcome(page, watcher.views);
+  log(`  waiting for the countdown to finish - no time limit...`);
+  const outcome = await waitForOutcome(page, watcher);
   watcher.stopped = true;
   await screenshot(page, `session-${label}-${outcome.result}-${Date.now()}`);
 
@@ -1015,7 +1038,7 @@ async function main() {
   log(`  start URL   : ${CONFIG.startUrl}`);
   log(`  reel link   : ${CONFIG.reelUrl}`);
   log(`  success text: "${CONFIG.successText}"`);
-  log(`  per session : click + wait ${formatDuration(CONFIG.postClickWaitMs)}`);
+  log(`  per session : click, then wait for the success page (no deadline)`);
   log(`  interval    : ${formatDuration(CONFIG.cooldownMs)} between sessions`);
   log(`  sessions    : ${CONFIG.cycles === Infinity ? 'unlimited (Ctrl+C to stop)' : CONFIG.cycles}`);
   if (CONFIG.manual) {

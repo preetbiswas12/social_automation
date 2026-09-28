@@ -22,7 +22,6 @@ const VIEWS = {
   startUrl: 'https://zefame.com/en/free-instagram-views',
   reelUrl: 'https://www.instagram.com/reel/Ddwn0ZwzX6w/',
   cooldownMs: 360_000, // 6 minutes
-  postClickWaitMs: 70_000, // the site's own countdown is 60 s
   // Each service needs its own Chromium profile. Two processes cannot share one
   // - the second dies with "Failed to create a ProcessSingleton for your profile
   // directory" - so running views and likes at the same time needs this set.
@@ -47,7 +46,9 @@ function overridesFromArgs() {
     if (match[1] === 'url') out.startUrl = match[2];
     if (match[1] === 'link') out.reelUrl = match[2];
     if (match[1] === 'cooldown') out.cooldownMs = Number(match[2]) * 1000;
-    if (match[1] === 'wait') out.postClickWaitMs = Number(match[2]) * 1000;
+    // --wait=N caps the wait in seconds; the default is to wait without a
+    // deadline until the site shows success or an error page.
+    if (match[1] === 'wait') out.maxWaitMs = Number(match[2]) * 1000;
   }
   return out;
 }
