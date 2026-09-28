@@ -23,6 +23,11 @@ const VIEWS = {
   reelUrl: 'https://www.instagram.com/reel/Ddwn0ZwzX6w/',
   cooldownMs: 360_000, // 6 minutes
   postClickWaitMs: 70_000, // the site's own countdown is 60 s
+  // Each service needs its own Chromium profile. Two processes cannot share one
+  // - the second dies with "Failed to create a ProcessSingleton for your profile
+  // directory" - so running views and likes at the same time needs this set.
+  // It also gives each its own logs/status-<id>.json.
+  target: 'views',
 };
 
 run({ ...VIEWS, ...overridesFromArgs() })

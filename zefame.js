@@ -114,6 +114,9 @@ const CONFIG = {
   screenshots: bool(args.screenshots, DEFAULTS.screenshots),
   check: bool(args.check, DEFAULTS.check),
   manual: bool(args.manual, DEFAULTS.manual),
+  // Set by views.js / likes.js through run(). Each service needs its own
+  // Chromium profile, so that two can run at the same time.
+  target: String(args.target ?? ''),
 };
 
 const SHOTS_DIR = path.join(ROOT, 'shots');
@@ -126,7 +129,10 @@ const LOGS_DIR = path.join(ROOT, 'logs');
  *  command line case - behaviour is exactly as it was before: logs/status.json,
  *  unprefixed log lines, and no "target" field in the history.
  */
-const TARGET = args.target ? String(args.target) : '';
+// Read from CONFIG rather than straight from args, so views.js and likes.js can
+// set it through run() after this module is already loaded. A value passed as
+// --target on the command line still wins, because run() is given it in CONFIG.
+let target = CONFIG.target;
 
 /** One browser profile per session, not one for the whole install.
  *
@@ -141,15 +147,16 @@ const TARGET = args.target ? String(args.target) : '';
  *  no --target the original single shared directory is used, so the plain
  *  command line case is unchanged.
  */
-const PROFILE_DIR = TARGET
-  ? path.join(ROOT, '.chrome-profile', TARGET.replace(/[^A-Za-z0-9_-]/g, '') || 'default')
-  : path.join(ROOT, '.chrome-profile');
+const PROFILE_DIR = () =>
+  target
+    ? path.join(ROOT, '.chrome-profile', target.replace(/[^A-Za-z0-9_-]/g, '') || 'default')
+    : path.join(ROOT, '.chrome-profile');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const stamp = () => new Date().toLocaleString('en-GB');
 
 function log(message) {
-  console.log(`[${stamp()}]${TARGET ? ` [${TARGET}]` : ''} ${message}`);
+  console.log(`[${stamp()}]${target ? ` [${target}]` : ''} ${message}`);
 }
 
 /** Sleep that gives up as soon as a stop is requested, so Ctrl+C (or systemd
@@ -190,7 +197,7 @@ function ensureDirs() {
 function recordRun(entry) {
   const line = JSON.stringify({
     at: new Date().toISOString(),
-    ...(TARGET ? { target: TARGET } : {}),
+    ...(target ? { target } : {}),
     ...entry,
   });
   fs.appendFileSync(path.join(LOGS_DIR, 'runs.jsonl'), line + '\n');
@@ -200,7 +207,7 @@ function recordRun(entry) {
  *  (there is no console to watch on a server). One file per workflow when
  *  --target is used, so the dashboard can read each one independently. */
 function writeStatus(patch) {
-  const file = path.join(LOGS_DIR, TARGET ? `status-${TARGET}.json` : 'status.json');
+  const file = path.join(LOGS_DIR, target ? `status-${target}.json` : 'status.json');
   let current = {};
   try {
     current = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -213,7 +220,7 @@ function writeStatus(patch) {
 
 async function screenshot(page, name) {
   if (!CONFIG.screenshots) return;
-  const file = path.join(SHOTS_DIR, `${TARGET ? `${TARGET}-` : ''}${name}.png`);
+  const file = path.join(SHOTS_DIR, `${target ? `${target}-` : ''}${name}.png`);
   try {
     await page.screenshot({ path: file, fullPage: false });
     log(`  screenshot: ${path.relative(ROOT, file)}`);
@@ -293,7 +300,7 @@ async function launch() {
   let lastError;
   for (const channel of channels) {
     try {
-      const context = adopt(await chromium.launchPersistentContext(PROFILE_DIR, { ...options, channel }));
+      const context = adopt(await chromium.launchPersistentContext(PROFILE_DIR(), { ...options, channel }));
       if (channel !== 'chrome') log('  started the bundled Chromium');
       return context;
     } catch (error) {
@@ -308,7 +315,7 @@ async function launch() {
 
   log('  falling back to the default bundled browser...');
   try {
-    return adopt(await chromium.launchPersistentContext(PROFILE_DIR, options));
+    return adopt(await chromium.launchPersistentContext(PROFILE_DIR(), options));
   } catch (error) {
     log(`Could not start a browser. On Linux run: npx playwright install --with-deps chromium`);
     throw lastError ?? error;
@@ -1151,6 +1158,9 @@ async function main() {
  */
 export function run(overrides = {}) {
   Object.assign(CONFIG, overrides);
+  // The target decides the profile directory, the log prefix and the status
+  // file, so it has to be set before any of those are used.
+  target = CONFIG.target || '';
   return main();
 }
 

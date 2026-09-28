@@ -25,6 +25,9 @@ const LIKES = {
   reelUrl: 'https://www.instagram.com/p/Ddx6_sEE9qw/',
   cooldownMs: 1_860_000, // 31 minutes - the site's limit is 30
   postClickWaitMs: 70_000, // the site's own countdown is 60 s
+  // Its own Chromium profile, so it can run at the same time as views.js. See
+  // the note in views.js - sharing one directory stops the second process.
+  target: 'likes',
 };
 
 run({ ...LIKES, ...overridesFromArgs() })
