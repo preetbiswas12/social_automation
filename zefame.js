@@ -258,7 +258,7 @@ async function launch() {
   let lastError;
   for (const channel of channels) {
     try {
-      return await chromium.launchPersistentContext(PROFILE_DIR, { ...options, channel });
+      return adopt(await chromium.launchPersistentContext(PROFILE_DIR, { ...options, channel }));
     } catch (error) {
       lastError = error;
       log(`  ${channel} unavailable: ${error.message.split('\n')[0]}`);
@@ -267,7 +267,7 @@ async function launch() {
 
   log('  falling back to the default bundled browser...');
   try {
-    return await chromium.launchPersistentContext(PROFILE_DIR, options);
+    return adopt(await chromium.launchPersistentContext(PROFILE_DIR, options));
   } catch (error) {
     log(`Could not start a browser. On Linux run: npx playwright install --with-deps chromium`);
     throw lastError ?? error;
@@ -458,10 +458,61 @@ async function textOf(page, selector) {
 
 /* ------------------------------------------------------------------ session */
 
+/* -------------------------------------------------- navigation triage */
+
+/** Requests that are open right now, so a navigation timeout can report what it
+ *  was actually waiting on. A bare "Timeout 60000ms exceeded" cannot be told
+ *  apart from a site that is down, a third party CDN that never answers, and
+ *  an instance that is simply out of memory, and those need different fixes. */
+const inFlight = new Map();
+
+function watchRequests(context) {
+  context.on('request', (req) => inFlight.set(req, Date.now()));
+  const settled = (req) => inFlight.delete(req);
+  context.on('requestfinished', settled);
+  context.on('requestfailed', settled);
+}
+
+/** Start triaging a freshly opened context and hand it straight back, so every
+ *  launch path watches requests without having to remember to. */
+function adopt(context) {
+  watchRequests(context);
+  return context;
+}
+
+/** The still-open requests, slowest first, as "host (Ns)" lines. */
+function pendingRequests(limit = 8) {
+  const now = Date.now();
+  return [...inFlight.entries()]
+    .map(([req, since]) => ({ host: new URL(req.url()).host, secs: Math.round((now - since) / 1000) }))
+    .sort((a, b) => b.secs - a.secs)
+    .slice(0, limit)
+    .map((r) => `    ${r.host} (${r.secs}s)`);
+}
+
+/** Navigate, and on failure say what was outstanding rather than only that it
+ *  timed out. */
+async function gotoWithTriage(page, url) {
+  inFlight.clear();
+  try {
+    return await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  } catch (error) {
+    const pending = pendingRequests();
+    log(`  Navigation failed: ${error.message.split('\n')[0]}`);
+    if (pending.length) {
+      log('  Still waiting on:');
+      for (const line of pending) log(line);
+    } else {
+      log('  No requests were outstanding, so the page itself never responded.');
+    }
+    throw error;
+  }
+}
+
 /** Load the page fresh and put the reel link in the box. */
 async function openForm(page) {
   log(`Opening ${CONFIG.startUrl}`);
-  await page.goto(CONFIG.startUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await gotoWithTriage(page, CONFIG.startUrl);
 
   await page.waitForSelector(SELECTORS.input, { state: 'visible', timeout: 30_000 });
   await page.waitForSelector(SELECTORS.button, { state: 'visible', timeout: 30_000 });
