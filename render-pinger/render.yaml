@@ -1,0 +1,22 @@
+# Optional Blueprint for render-pinger (manual dashboard creation also works -
+# see README.md). After first deploy set GH_TOKEN and KEEP_ALIVE_URL from the
+# dashboard (both sync: false so nothing secret lives in the repo).
+services:
+  - type: web
+    name: zefame-views-pinger
+    runtime: node
+    rootDir: render-pinger
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: ZEFAME_WORKFLOW
+        value: views
+      - key: GH_REPO
+        value: preetbiswas12/social_automation
+      - key: INTERVAL_MINUTES
+        value: "35"
+      - key: GH_TOKEN
+        sync: false
+      - key: KEEP_ALIVE_URL
+        sync: false
