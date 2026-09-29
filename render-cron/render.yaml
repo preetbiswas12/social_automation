@@ -1,0 +1,38 @@
+# Render Blueprint for a Cron Job that dispatches the GitHub Actions workflow.
+#
+# Two ways to use:
+#
+# 1) Manual (works with a subfolder): New + -> Cron Job -> connect this repo ->
+#    Root directory: render-cron, Runtime: Node, Build command: true,
+#    Start command: node ping.mjs, Schedule: */35 * * * *, plan 0.5c-512mb,
+#    then add the env vars. No blueprint required.
+#
+# 2) Blueprint: New + -> Blueprint -> choose this repo and point the blueprint
+#    config at render-cron/render.yaml (Render lets you customize the path).
+#
+# The schedule below (`*/35 * * * *`) fires at :00 and :35 of every hour -
+# 35-minute and 25-minute gaps alternating. That is standard cron; an hour
+# cannot be split into uniform 35s. Fine for views (site limit is 5 min per
+# link). For likes (30-min per-link limit) use `0 * * * * *`... see README.
+#
+# Cron jobs are paid: $1/mo minimum each, plus per-second runtime. ping.mjs
+# runs ~2 s per tick, so one job lands at ~$1-2/mo.
+
+services:
+  - type: cron
+    name: zefame-views-cron
+    runtime: node
+    rootDir: render-cron
+    plan: 0.5c-512mb
+    buildCommand: "true"
+    startCommand: node ping.mjs
+    schedule: "*/35 * * * *"
+    envVars:
+      - key: GH_REPO
+        value: preetbiswas12/social_automation
+      - key: ZEFAME_WORKFLOW
+        value: views
+      # Set this secret in the Render dashboard after first deploy:
+      # fine-grained PAT, "Actions: read and write" on preetbiswas12/social_automation
+      - key: GH_TOKEN
+        sync: false
