@@ -109,6 +109,17 @@ function headlessFromEnv(fallback) {
   return !(value === '0' || value.toLowerCase() === 'false' || value.toLowerCase() === 'no');
 }
 
+/** --max-wait / --wait are SECONDS on the command line (that is what the help
+ *  text and the workflow input promise); MAX_WAIT_MS is milliseconds in the
+ *  environment, because its name says so. Mixing those units up used to cap a
+ *  31-minute cap at ~2 s and end a perfectly healthy session right after the
+ *  countdown started. 0 means no cap. */
+function maxWaitFromConfig() {
+  const flag = args['max-wait'] ?? args.wait;
+  if (flag === undefined) return num(process.env.MAX_WAIT_MS, DEFAULTS.maxWaitMs);
+  return num(flag, 0) * 1000;
+}
+
 const CONFIG = {
   startUrl: String(args.url ?? process.env.START_URL ?? DEFAULTS.startUrl),
   reelUrl: String(args.link ?? process.env.REEL_URL ?? DEFAULTS.reelUrl),
@@ -116,9 +127,8 @@ const CONFIG = {
   successText: String(args['success-text'] ?? DEFAULTS.successText),
   postClickWaitMs: num(args.wait, DEFAULTS.postClickWaitMs),
   // An optional deadline for the whole wait. 0 = wait until the site shows
-  // success or error, however long that takes. --wait is accepted as a synonym
-  // so the old flag still means something: "no longer than this".
-  maxWaitMs: num(args['max-wait'] ?? args.wait, process.env.MAX_WAIT_MS ?? DEFAULTS.maxWaitMs),
+  // success or error, however long that takes. Seconds on the CLI, ms via env.
+  maxWaitMs: maxWaitFromConfig(),
   cooldownMs: num(args.cooldown, DEFAULTS.cooldownMs),
   graceMs: num(args.grace, DEFAULTS.graceMs),
   cycles: num(args.cycles ?? args.sessions, DEFAULTS.cycles),
