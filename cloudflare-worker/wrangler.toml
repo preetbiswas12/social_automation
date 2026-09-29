@@ -1,0 +1,15 @@
+name = "zefame-views-pinger"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# Standard cron -> */35 fires at :00 and :35 every hour (35-min and 25-min
+# gaps alternating, same as anywhere else). Fine for views (5-min per-link
+# limit). For likes (30-min limit) use crons = ["0 * * * *"] instead, or add
+# both here if you want one worker to ping two workflows - each cron line
+# fires the same scheduled() handler; set ZEFAME_WORKFLOW accordingly.
+[triggers]
+crons = ["*/35 * * * *"]
+
+[vars]
+GH_REPO = "preetbiswas12/social_automation"
+ZEFAME_WORKFLOW = "views"
