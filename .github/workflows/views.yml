@@ -1,0 +1,52 @@
+name: Zefame views
+
+# Triggered only from outside (see pinger.sh), so the cadence is whatever the
+# pinger wants - GitHub's own schedule trigger is limited to 5-minute steps
+# and skips runs that overlap, neither of which applies to workflow_dispatch.
+#
+# Each run: one real 300-view order, in a headed browser under xvfb-run. The
+# first manual dispatch is the experiment: if it lands "Order error", the
+# shared datacenter IP is blocked and Actions is off the table.
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_wait_seconds:
+        description: Cap for the post-click wait (jobs must always end)
+        required: false
+        default: '300'
+        type: string
+
+concurrency:
+  group: zefame-views
+  cancel-in-progress: false
+
+jobs:
+  order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Dependencies
+        run: |
+          npm ci
+          command -v xvfb-run || sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: One order, headed under the virtual display
+        run: xvfb-run -a node views.js --sessions=1 --max-wait=${{ github.event.inputs.max_wait_seconds }}
+
+      - name: Upload screenshots if the run failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots
+          path: shots/
+          if-no-files-found: ignore
