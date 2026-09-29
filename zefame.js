@@ -207,6 +207,10 @@ function ensureDirs() {
 }
 
 function recordRun(entry) {
+  // A fresh checkout has no logs/ directory until the first session ends, and
+  // some writes happen before that - create it on the spot so a writer can
+  // never fail with ENOENT depending on call order.
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
   const line = JSON.stringify({
     at: new Date().toISOString(),
     ...(target ? { target } : {}),
@@ -220,6 +224,9 @@ function recordRun(entry) {
  *  --target is used, so the dashboard can read each one independently. */
 function writeStatus(patch) {
   const file = path.join(LOGS_DIR, target ? `status-${target}.json` : 'status.json');
+  // Same guarantee as recordRun: the directory must exist no matter what ran
+  // before (or did not run) on a fresh checkout.
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
   let current = {};
   try {
     current = JSON.parse(fs.readFileSync(file, 'utf8'));
