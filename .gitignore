@@ -9,3 +9,4 @@ config.json.tmp
 
 discord.config.json
 discord-state.json
+.gh-token

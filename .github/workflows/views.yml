@@ -10,12 +10,6 @@ name: Zefame views
 
 on:
   workflow_dispatch:
-    inputs:
-      max_wait_seconds:
-        description: Cap for the post-click wait (jobs must always end)
-        required: false
-        default: '300'
-        type: string
 
 concurrency:
   group: zefame-views
@@ -41,7 +35,10 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: One order, headed under the virtual display
-        run: xvfb-run -a node views.js --sessions=1 --max-wait=${{ github.event.inputs.max_wait_seconds }}
+        # No --max-wait: the session waits until the site shows success or an
+        # error page, however long that takes. timeout-minutes above is the
+        # hard backstop so a run that never gets a result still ends.
+        run: xvfb-run -a node views.js --sessions=1
 
       - name: Upload screenshots if the run failed
         if: failure()
